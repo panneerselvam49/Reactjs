@@ -1,0 +1,36 @@
+{
+  "name": "upload-server",
+  "version": "1.0.0",
+  "description": "Dedicated file uploading microservice using Multer and Express",
+  "main": "src/server.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon --exec npx tsx src/server.ts",
+    "start": "npx tsx src/server.ts",
+    "build": "tsc",
+    "test:upload": "npx tsx test-client.ts"
+  },
+  "keywords": [
+    "multer",
+    "file-upload",
+    "express",
+    "microservice"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.13.4",
+    "nodemon": "^3.1.9",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,147 @@
+.page {
+	min-height: 100vh;
+	background: #f7f6f2;
+	color: #20231f;
+}
+
+.kicker {
+	margin-bottom: .7rem;
+	color: #ac5a42;
+	font-size: .62rem;
+	font-weight: 700;
+	letter-spacing: .15em;
+}
+
+.catalogHeader h2 {
+	margin: 0;
+	font-family: Georgia, 'Times New Roman', serif;
+	font-weight: 400;
+	letter-spacing: -.05em;
+}
+
+.catalog {
+	padding: 6rem 0 4.5rem;
+}
+
+.catalogHeader {
+	display: flex;
+	align-items: end;
+	justify-content: space-between;
+	gap: 2rem;
+	margin-bottom: 2rem;
+}
+
+.catalogHeader h2 {
+	font-size: clamp(1.8rem, 3vw, 2.7rem);
+}
+
+.controls {
+	display: flex;
+	gap: .5rem;
+}
+
+.searchBox,
+.sortBox {
+	display: flex;
+	align-items: center;
+	gap: .4rem;
+	height: 36px;
+	padding: 0 .65rem;
+	border: 1px solid #d4d1c8;
+	background: white;
+	color: #777a72;
+}
+
+.searchBox input,
+.sortBox select {
+	width: 135px;
+	border: 0;
+	outline: 0;
+	background: transparent;
+	color: #444941;
+	font: inherit;
+	font-size: .64rem;
+}
+
+.sortBox select {
+	width: 125px;
+	cursor: pointer;
+}
+
+.empty {
+	display: grid;
+	place-items: center;
+	gap: .5rem;
+	padding: 5rem 1rem;
+	border: 1px dashed #c9c5bb;
+	color: #858980;
+	text-align: center;
+}
+
+.empty h3 {
+	color: #31372f;
+	font-family: Georgia, serif;
+	font-size: 1.2rem;
+	font-weight: 400;
+}
+
+.empty button,
+.loadMore {
+	display: inline-flex;
+	align-items: center;
+	gap: .35rem;
+	padding: .65rem .9rem;
+	border: 1px solid #97978e;
+	color: #31372f;
+	font-size: .64rem;
+}
+
+.empty button {
+	background: #222820;
+	border-color: #222820;
+	color: white;
+}
+
+.loadMore {
+	margin: 2rem auto 0;
+}
+
+.loadMore:disabled {
+	opacity: .5;
+	cursor: not-allowed;
+}
+
+@media (max-width: 800px) {
+	.catalogHeader {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.controls {
+		width: 100%;
+	}
+
+	.searchBox {
+		flex: 1;
+	}
+
+	.searchBox input {
+		width: 100%;
+	}
+}
+
+@media (max-width: 520px) {
+	.controls {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.searchBox,
+	.sortBox {
+		width: 100%;
+	}
+
+	.sortBox select {
+		flex: 1;
+	}
+}
