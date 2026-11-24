@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownUp, ChevronRight, Search } from 'lucide-react';
+import { ArrowDownUp, ChevronRight, Search, SlidersHorizontal } from 'lucide-react';
 import { getProducts, searchProducts } from '@/services/api';
 import { useCart } from '@/context/CartContext';
 import type { Product } from '@/types';
@@ -17,6 +17,9 @@ export default function HomePage() {
 	const [hasMore, setHasMore] = useState(true);
 	const [search, setSearch] = useState('');
 	const [sort, setSort] = useState<'featured' | 'price-low' | 'price-high'>('featured');
+	const [category, setCategory] = useState('all');
+	const [minimumPrice, setMinimumPrice] = useState<number | null>(null);
+	const [maximumPrice, setMaximumPrice] = useState<number | null>(null);
 	const { setCartCount } = useCart();
 	const requestId = useRef(0);
 
@@ -55,13 +58,44 @@ export default function HomePage() {
 		return () => window.clearTimeout(timer);
 	}, [page, search, setCartCount]);
 
+	const priceBounds = useMemo(() => {
+		const prices = products.map((product) => Number(product.price)).filter(Number.isFinite);
+		if (prices.length === 0) return { min: 0, max: 1 };
+
+		return {
+			min: Math.floor(Math.min(...prices)),
+			max: Math.ceil(Math.max(...prices)),
+		};
+	}, [products]);
+
+	const categories = useMemo(
+		() => [...new Set(products.map((product) => product.category).filter(Boolean))].sort(),
+		[products],
+	);
+
+	const selectedMinimumPrice = minimumPrice ?? priceBounds.min;
+	const selectedMaximumPrice = maximumPrice ?? priceBounds.max;
+
 	const filteredProducts = useMemo(() => {
-		const result = products;
+		const result = products.filter((product) => {
+			const productPrice = Number(product.price);
+			return (
+				(category === 'all' || product.category === category)
+				&& productPrice >= selectedMinimumPrice
+				&& productPrice <= selectedMaximumPrice
+			);
+		});
 
 		if (sort === 'price-low') return [...result].sort((a, b) => Number(a.price) - Number(b.price));
 		if (sort === 'price-high') return [...result].sort((a, b) => Number(b.price) - Number(a.price));
 		return result;
-	}, [products, sort]);
+	}, [category, products, selectedMaximumPrice, selectedMinimumPrice, sort]);
+
+	const clearFilters = () => {
+		setCategory('all');
+		setMinimumPrice(null);
+		setMaximumPrice(null);
+	};
 
 	return (
 		<main className={styles.page}>
@@ -96,6 +130,45 @@ export default function HomePage() {
 						</div>
 					</div>
 
+					<div className={styles.filters} aria-label="Product filters">
+						<label className={styles.filterBox}>
+							<SlidersHorizontal size={14} />
+							<select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Filter by category">
+								<option value="all">All categories</option>
+								{categories.map((option) => (
+									<option key={option} value={option}>{option}</option>
+								))}
+							</select>
+						</label>
+						<div className={styles.priceFilter}>
+							<div className={styles.priceHeader}>
+								<span>Price</span>
+								<span>₹{selectedMinimumPrice} – ₹{selectedMaximumPrice}</span>
+							</div>
+							<div className={styles.rangeInputs}>
+								<input
+									type="range"
+									min={priceBounds.min}
+									max={priceBounds.max}
+									value={selectedMinimumPrice}
+									onChange={(event) => setMinimumPrice(Math.min(Number(event.target.value), selectedMaximumPrice))}
+									aria-label="Minimum price"
+								/>
+								<input
+									type="range"
+									min={priceBounds.min}
+									max={priceBounds.max}
+									value={selectedMaximumPrice}
+									onChange={(event) => setMaximumPrice(Math.max(Number(event.target.value), selectedMinimumPrice))}
+									aria-label="Maximum price"
+								/>
+							</div>
+						</div>
+						{(category !== 'all' || minimumPrice !== null || maximumPrice !== null) && (
+							<button className={styles.clearFilters} onClick={clearFilters}>Clear filters</button>
+						)}
+					</div>
+
 					{loading && products.length === 0 ? (
 						<div className="loading-page"><div className="spinner" /><p>Loading products...</p></div>
 					) : filteredProducts.length === 0 ? (
@@ -105,7 +178,8 @@ export default function HomePage() {
 							<button onClick={() => {
 								setSearch('');
 								setPage(1);
-							}}>Clear search</button>
+								clearFilters();
+							}}>Clear search and filters</button>
 						</div>
 					) : (
 						<>

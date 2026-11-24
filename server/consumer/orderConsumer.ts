@@ -108,11 +108,18 @@ const processOrder = async (payload: OrderMessage): Promise<void> => {
 	console.log(`[Consumer] Order confirmation email successfully sent to ${recipientEmail} for Order #${payload.orderId}`);
 };
 
+class RetryOrderStatusError extends Error {
+	constructor(orderId: number) {
+		super(`Order #${orderId} is not ready for delivery yet`);
+		this.name = 'RetryOrderStatusError';
+	}
+}
+
 const processOrderStatus = async (payload: OrderStatusMessage): Promise<void> => {
 	const expectedCurrentStatus = payload.status === 'shipped' ? 'ordered' : 'shipped';
 	const timestampField = payload.status === 'shipped' ? 'shippedAt' : 'deliveredAt';
-	const [updatedCount] = await db.transaction(async (transaction) => {
-		return order.update(
+	const updatedCount = await db.transaction(async (transaction) => {
+		const [count] = await order.update(
 			{ status: payload.status, [timestampField]: new Date() },
 			{
 				where: {
@@ -122,6 +129,24 @@ const processOrderStatus = async (payload: OrderStatusMessage): Promise<void> =>
 				transaction,
 			}
 		);
+
+		if (count > 0) return count;
+
+		const currentOrder = await order.findOne({
+			attributes: ['status'],
+			where: { id: payload.orderId },
+			transaction,
+			lock: transaction.LOCK.UPDATE,
+		});
+
+		if (
+			payload.status === 'delivered' &&
+			currentOrder?.getDataValue('status') === 'ordered'
+		) {
+			throw new RetryOrderStatusError(payload.orderId);
+		}
+
+		return count;
 	});
 
 	if (updatedCount === 0) {
@@ -138,7 +163,7 @@ export const startOrderConsumer = async (): Promise<void> => {
 	// Process one message at a time
 	await channel.prefetch(1);
 
-	console.log(`🐇 [Consumer] Listening for messages on "${ORDER_QUEUE}" and "${ORDER_STATUS_QUEUE}"...`);
+	console.log(`[Consumer] Listening for messages on "${ORDER_QUEUE}" and "${ORDER_STATUS_QUEUE}"...`);
 
 	await channel.consume(ORDER_QUEUE, async (message) => {
 		if (!message) return;
@@ -161,6 +186,13 @@ export const startOrderConsumer = async (): Promise<void> => {
 			await processOrderStatus(statusMessage);
 			channel.ack(message);
 		} catch (error) {
+			if (error instanceof RetryOrderStatusError) {
+				console.warn(`[Consumer] ${error.message}; retrying status message`);
+				await new Promise((resolve) => setTimeout(resolve, 1000));
+				channel.nack(message, false, true);
+				return;
+			}
+
 			console.error('[Consumer] Failed to process order status message:', error);
 			channel.nack(message, false, false);
 		}

@@ -7,16 +7,22 @@ import user from '../../models/user.ts';
 
 export const addToCart = async (req: Request, res: Response): Promise<void> => {
 	try {
-		const { userId, productId, quantity } = req.body;
+		const userId = Number(res.locals.userId);
+		const { productId, quantity } = req.body;
 
-		if (!userId || !productId || !quantity) {
+		if (
+			!Number.isInteger(Number(userId))
+			|| !Number.isInteger(Number(productId))
+			|| !Number.isInteger(Number(quantity))
+			|| Number(quantity) < 1
+		) {
 			res.status(400).json({ success: false, message: 'Some details are missing' });
 			return;
 		}
 
 		const users = await user.findOne({
 			where: {
-				id: userId
+				id: Number(userId)
 			}
 		});
 
@@ -25,47 +31,62 @@ export const addToCart = async (req: Request, res: Response): Promise<void> => {
 			return;
 		}
 
-		const product = await products.findOne({
-			where: {
-				isAvailableToBuy: true,
-				id: productId,
+		await db.transaction(async (transaction) => {
+			const product = await products.findOne({
+				where: {
+					isAvailableToBuy: true,
+					id: Number(productId),
+				},
+				transaction,
+				lock: transaction.LOCK.UPDATE,
+			});
+
+			if (!product) {
+				throw new Error('PRODUCT_NOT_FOUND');
 			}
+
+			const existingCart = await cart.findOne({
+				where: {
+					userId: Number(userId),
+					productId: Number(productId),
+				},
+				transaction,
+				lock: transaction.LOCK.UPDATE,
+			});
+
+			const requestedQuantity = existingCart
+				? Number(existingCart.getDataValue('quantity')) + Number(quantity)
+				: Number(quantity);
+
+			if (Number(product.getDataValue('stock')) < requestedQuantity) {
+				throw new Error('OUT_OF_STOCK');
+			}
+
+			if (existingCart) {
+				await existingCart.increment('quantity', {
+					by: Number(quantity),
+					transaction,
+				});
+				return;
+			}
+
+			await cart.create({
+				userId: Number(userId),
+				productId: Number(productId),
+				quantity: Number(quantity),
+			}, { transaction });
 		});
-
-		if (!product) {
-			res.status(400).json({ success: false, message: "Product not found." });
-			return;
-		}
-
-		if (product.getDataValue("stock") < quantity) {
-			res.status(400).json({ success: false, message: "Product not in stock." });
-			return;
-		}
-
-		const existingCart = await cart.findOne({ where: { userId, productId } });
-		if (existingCart) {
-			existingCart.quantity += quantity;
-			await existingCart.save();
-			res.status(200).json({ success: true, message: 'Product added to cart successfully' });
-			return;
-		}
-
-		const addCart = db.transaction(async (t) => {
-			const cartItem = await cart.create({
-				userId,
-				productId,
-				quantity,
-			}, { transaction: t })
-
-			return cartItem;
-		})
-
-		if (!addCart) {
-			throw new Error('Failed to add cart');
-		}
 		res.status(201).json({ success: true, message: 'Product added to cart successfully' });
 
 	} catch (error) {
+		if (error instanceof Error && error.message === 'PRODUCT_NOT_FOUND') {
+			res.status(404).json({ success: false, message: 'Product not found.' });
+			return;
+		}
+		if (error instanceof Error && error.message === 'OUT_OF_STOCK') {
+			res.status(409).json({ success: false, message: 'Product not in stock.' });
+			return;
+		}
 		console.error('addToCart error:', error);
 		res.status(500).json({ success: false, message: 'Internal Server Error' });
 	}
@@ -90,42 +111,62 @@ export const getCartItems = async (req: Request, res: Response): Promise<void> =
 
 export const removeFromCart = async (req: Request, res: Response): Promise<void> => {
 	try {
-		let userId = Number(res.locals.userId);
-		const {cartId, quantity } = req.body;
+		const userId = Number(res.locals.userId);
+		const { cartId, quantity } = req.body;
 
-		if (!userId || !cartId || !quantity) {
+		if (
+			!userId
+			|| !Number.isInteger(Number(cartId))
+			|| !Number.isInteger(Number(quantity))
+			|| Number(quantity) < 1
+		) {
 			res.status(400).json({ success: false, message: 'Some details are missing' });
 			return;
 		}
 
-		let users = await user.findOne({ where: {id: userId}});
+		const users = await user.findOne({ where: { id: userId } });
 		
 		if (!users) {
 			res.status(401).json({ success: false, message: "Unauthorized!" });
 			return;
 		}
 
-		let findCart = await cart.findOne({ where: { userId, id: cartId } });
-		if (!findCart) {
-			res.status(400).json({ success: false, message: "Cart not found." });
-			return;
-		}
+		await db.transaction(async (transaction) => {
+			const findCart = await cart.findOne({
+				where: { userId, id: Number(cartId) },
+				transaction,
+				lock: transaction.LOCK.UPDATE,
+			});
+			if (!findCart) {
+				throw new Error('CART_NOT_FOUND');
+			}
 
-		if (findCart.getDataValue("quantity") < quantity) {
-			res.status(400).json({ success: false, message: "Product not in stock." });
-			return;
-		}
+			const currentQuantity = Number(findCart.getDataValue('quantity'));
+			const removeQuantity = Number(quantity);
+			if (currentQuantity < removeQuantity) {
+				throw new Error('INVALID_QUANTITY');
+			}
 
-		if (findCart.getDataValue("quantity") === quantity) {
-			await findCart.destroy();
-			res.status(200).json({ success: true, message: 'Product removed from cart successfully' });
-			return;
-		}
+			if (currentQuantity === removeQuantity) {
+				await findCart.destroy({ transaction });
+				return;
+			}
 
-		findCart.quantity -= quantity;
-		await findCart.save();
+			await findCart.decrement('quantity', {
+				by: removeQuantity,
+				transaction,
+			});
+		});
 		res.status(200).json({ success: true, message: 'Product removed from cart successfully' });
 	} catch (error) {
+		if (error instanceof Error && error.message === 'CART_NOT_FOUND') {
+			res.status(400).json({ success: false, message: 'Cart not found.' });
+			return;
+		}
+		if (error instanceof Error && error.message === 'INVALID_QUANTITY') {
+			res.status(400).json({ success: false, message: 'Product not in stock.' });
+			return;
+		}
 		console.log('removeFromCart error:', error);
 		res.status(500).json({ success: false, message: 'Internal Server Error' });
 	}

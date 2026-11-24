@@ -6,9 +6,11 @@ import { useRouter } from 'next/navigation';
 import { MapPin, CheckCircle2, Package, ShoppingBag } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
-import { placeOrder } from '@/services/api';
+import { getOrders, placeOrder } from '@/services/api';
 import toast from 'react-hot-toast';
 import styles from './checkout.module.css';
+
+const NEW_ADDRESS_VALUE = '__new_address__';
 
 export default function CheckoutPage() {
 	const { items, directBuyItem, setDirectBuyItem, clearCart } = useCart();
@@ -23,6 +25,9 @@ export default function CheckoutPage() {
 	const [loading, setLoading] = useState(false);
 	const [orderPlaced, setOrderPlaced] = useState(false);
 	const [orderId, setOrderId] = useState<number | null>(null);
+	const [savedAddresses, setSavedAddresses] = useState<string[]>([]);
+	const [selectedAddress, setSelectedAddress] = useState(NEW_ADDRESS_VALUE);
+	const [savedAddressesLoading, setSavedAddressesLoading] = useState(true);
 
 	useEffect(() => {
 		if (!user) {
@@ -31,6 +36,40 @@ export default function CheckoutPage() {
 			router.replace('/cart');
 		}
 	}, [user, checkoutItems.length, orderPlaced, router]);
+
+	useEffect(() => {
+		if (!user) return;
+
+		const loadSavedAddresses = async () => {
+			try {
+				const response = await getOrders();
+				if (!response.success) {
+					toast.error('Unable to load saved addresses');
+					return;
+				}
+
+				const addresses = Array.from(
+					new Set(
+						response.orders
+							.map((existingOrder) => existingOrder.address.trim())
+							.filter(Boolean),
+					),
+				);
+				setSavedAddresses(addresses);
+				if (addresses.length > 0) {
+					setAddress(addresses[0]);
+					setSelectedAddress(addresses[0]);
+				}
+			} catch (error) {
+				console.error('Failed to load saved addresses:', error);
+				toast.error('Unable to load saved addresses');
+			} finally {
+				setSavedAddressesLoading(false);
+			}
+		};
+
+		void loadSavedAddresses();
+	}, [user]);
 
 	if (!user || (checkoutItems.length === 0 && !orderPlaced)) {
 		return null;
@@ -132,14 +171,52 @@ export default function CheckoutPage() {
 									<MapPin size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
 									Delivery Address
 								</label>
-								<textarea
-									id="address"
-									className={`input-field ${styles['checkout-textarea']}`}
-									placeholder="Enter your full delivery address including city, state and pincode..."
-									value={address}
-									onChange={(e) => setAddress(e.target.value)}
-									required
-								/>
+								{savedAddressesLoading ? (
+									<p className={styles['address-status']}>Loading saved addresses...</p>
+								) : savedAddresses.length > 0 ? (
+									<>
+										<select
+											className="input-field"
+											value={selectedAddress}
+											onChange={(event) => {
+												const value = event.target.value;
+												setSelectedAddress(value);
+												setAddress(value === NEW_ADDRESS_VALUE ? '' : value);
+											}}
+											aria-label="Choose a delivery address"
+										>
+											{savedAddresses.map((savedAddress, index) => (
+												<option key={`${savedAddress}-${index}`} value={savedAddress}>
+													Address {index + 1}: {savedAddress}
+												</option>
+											))}
+											<option value={NEW_ADDRESS_VALUE}>Use a new address</option>
+										</select>
+										{selectedAddress === NEW_ADDRESS_VALUE ? (
+											<textarea
+												id="address"
+												className={`input-field ${styles['checkout-textarea']}`}
+												placeholder="Enter your full delivery address including city, state and pincode..."
+												value={address}
+												onChange={(event) => setAddress(event.target.value)}
+												required
+											/>
+										) : (
+											<div className={styles['selected-address']} aria-label="Selected delivery address">
+												{address}
+											</div>
+										)}
+									</>
+								) : (
+									<textarea
+										id="address"
+										className={`input-field ${styles['checkout-textarea']}`}
+										placeholder="Enter your full delivery address including city, state and pincode..."
+										value={address}
+										onChange={(event) => setAddress(event.target.value)}
+										required
+									/>
+								)}
 							</div>
 
 							<button
